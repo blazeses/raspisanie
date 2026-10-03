@@ -44,6 +44,13 @@ button:focus-visible{outline:2px solid var(--t);outline-offset:3px}
 .nav{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:2.25rem}
 .nav button{margin:0;min-width:2.75rem}
 .nav button.on{background:var(--t);color:#000}
+details{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem;color:var(--t2);font-size:.9rem}
+summary{cursor:pointer;min-height:2.5rem;display:flex;align-items:center}
+textarea,input{width:100%;background:#000;color:var(--t);border:1px solid var(--t2);border-radius:.4rem;padding:.6rem;font:.85rem ui-monospace,Menlo,Consolas,monospace}
+textarea{min-height:9rem}
+input{margin-top:.6rem}
+#msg{margin:.4rem 0 0}
+textarea:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--t);outline-offset:3px}
 </style>
 </head>
 <body>
@@ -58,6 +65,14 @@ button:focus-visible{outline:2px solid var(--t);outline-offset:3px}
   </div>
   <h2 id="lh"></h2>
   <ul class="list" id="list"></ul>
+
+  <details>
+    <summary>Обновить расписание</summary>
+    <textarea id="json" spellcheck="false" aria-label="Расписание"></textarea>
+    <div id="tokwrap" hidden><input id="tok" type="password" autocomplete="off" placeholder="Токен GitHub" aria-label="Токен GitHub"></div>
+    <button type="button" id="save">Сохранить</button>
+    <p id="msg"></p>
+  </details>
 
 </main>
 
@@ -89,7 +104,50 @@ button:focus-visible{outline:2px solid var(--t);outline-offset:3px}
   var MONTHS=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   var $=function(i){return document.getElementById(i)};
   var off=0;
-  function data(){return BASE}
+  var REMOTE={};
+  try{REMOTE=JSON.parse(localStorage.getItem("remote")||"{}")||{}}catch(e){REMOTE={}}
+  function data(){var o={},k;for(k in BASE)o[k]=BASE[k];for(k in REMOTE)o[k]=REMOTE[k];return o}
+  function cacheRemote(){try{localStorage.setItem("remote",JSON.stringify(REMOTE))}catch(e){}}
+  function isObj(o){return o&&typeof o==="object"&&!Array.isArray(o)}
+  function fetchRemote(){
+    fetch("schedule.json",{cache:"no-store"}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(o){
+      if(isObj(o)){REMOTE=o;cacheRemote();render()}
+    }).catch(function(){});
+  }
+  function ghRepo(){
+    var h=location.hostname,seg=location.pathname.split("/")[1]||"";
+    if(/\.github\.io$/.test(h)){var ow=h.split(".")[0];return {owner:ow,repo:seg||ow+".github.io"}}
+    return {owner:"blazeses",repo:"raspisanie"};
+  }
+  function b64d(b){var bin=atob(b.replace(/\s/g,"")),a=new Uint8Array(bin.length),i;for(i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new TextDecoder().decode(a)}
+  function b64e(t){var a=new TextEncoder().encode(t),bin="",i;for(i=0;i<a.length;i++)bin+=String.fromCharCode(a[i]);return btoa(bin)}
+  function gh(url,tok,opt){
+    opt=opt||{};opt.headers={"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json"};
+    return fetch(url,opt).then(function(r){return r.json().catch(function(){return {}}).then(function(j){return {status:r.status,ok:r.ok,json:j}})});
+  }
+  function saveGH(add,tok){
+    var rp=ghRepo(),url="https://api.github.com/repos/"+rp.owner+"/"+rp.repo+"/contents/schedule.json";
+    return gh(url,tok).then(function(r){
+      var cur={},sha=null;
+      if(r.ok){sha=r.json.sha;try{cur=JSON.parse(b64d(r.json.content))}catch(e){cur={}}}
+      else if(r.status!==404){throw {status:r.status}}
+      if(!isObj(cur))cur={};
+      var k;for(k in add)cur[k]=add[k];
+      var body={message:"Обновление расписания",content:b64e(JSON.stringify(cur,null,1))};
+      if(sha)body.sha=sha;
+      return gh(url,tok,{method:"PUT",body:JSON.stringify(body)}).then(function(w){
+        if(!w.ok)throw {status:w.status};
+        return cur;
+      });
+    });
+  }
+  function validate(o){
+    if(!isObj(o))throw 1;var k;
+    for(k in o){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(k)||!Array.isArray(o[k]))throw 1;
+      o[k].forEach(function(l){if(!isObj(l)||!l.name||!(l.pair>=1||(l.start&&l.end)))throw 1});
+    }
+  }
   function key(d){var m=d.getMonth()+1,x=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(x<10?"0":"")+x}
   function mins(s){var p=s.split(":");return +p[0]*60+ +p[1]}
   function pad(n){return n<10?"0"+n:""+n}
@@ -159,12 +217,35 @@ button:focus-visible{outline:2px solid var(--t);outline-offset:3px}
     $("list").innerHTML=shown.length?shown.map(function(x){
       return '<li'+(cur===x&&off===0?' class="now"':'')+'><div>'+x.st+' – '+x.en+'</div><div><div class="n">'+esc(x.l.name)+'</div><div class="r">'+meta(x.l)+'</div></div></li>'}).join(""):'<li><div></div><div class="r">'+(BELLS[sd.getDay()]?"Нет пар":"Выходной")+'</div></li>';
   }
+  $("save").addEventListener("click",function(){
+    var m=$("msg"),o,tok="";
+    try{tok=localStorage.getItem("ghtoken")||""}catch(e){}
+    try{o=JSON.parse($("json").value);validate(o)}catch(e){m.textContent="Не получилось: проверьте формат.";return}
+    if(!tok){
+      tok=$("tok").value.trim();
+      if(!tok){$("tokwrap").hidden=false;m.textContent="Нужен токен GitHub. Вставьте его и нажмите «Сохранить».";return}
+    }
+    m.textContent="Сохраняю…";
+    saveGH(o,tok).then(function(merged){
+      try{localStorage.setItem("ghtoken",tok)}catch(e){}
+      REMOTE=merged;cacheRemote();render();
+      $("json").value="";$("tok").value="";$("tokwrap").hidden=true;
+      m.textContent="Сохранено. У остальных появится через 1–3 минуты.";
+    }).catch(function(err){
+      if(err&&(err.status===401||err.status===403||err.status===404)){
+        try{localStorage.removeItem("ghtoken")}catch(e){}
+        $("tokwrap").hidden=false;$("tok").value="";
+        m.textContent="GitHub не принял токен. Проверьте права и вставьте заново.";
+      }else{m.textContent="Не получилось сохранить. Проверьте интернет."}
+    });
+  });
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)fetchRemote()});
   function go(n){off=Math.max(-60,Math.min(60,n));render()}
   $("prev").addEventListener("click",function(){go(off-1)});
   $("nextd").addEventListener("click",function(){go(off+1)});
   $("tod").addEventListener("click",function(){go(0)});
   $("tom").addEventListener("click",function(){go(1)});
-  render();setInterval(render,1000);
+  render();fetchRemote();setInterval(fetchRemote,300000);setInterval(render,1000);
 })();
 </script>
 <script>
