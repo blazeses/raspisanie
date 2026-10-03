@@ -87,7 +87,13 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px so
     "2026-10-03":[
       {pair:2,name:"Выполнение полевых и камеральны…",type:"",room:"А-3",teacher:"Николаева С.И."},
       {pair:3,name:"Инженерная графика",type:"",room:"А-3",teacher:"Николаева С.И."},
-      {pair:4,name:"Основы геологии, геоморфологии, п…",type:"лекция",room:"А-9",teacher:"Байцур С.А."}]
+      {pair:4,name:"Основы геологии, геоморфологии, п…",type:"лекция",room:"А-9",teacher:"Байцур С.А."}],
+    "2026-10-05":[{"pair":2,"name":"Основы геологии, геоморфологии, п…","type":"","room":"А-9","teacher":"Байцур С.А."},{"pair":3,"name":"Математические методы решения пр…","type":"","room":"А-1","teacher":"Борисова Э.М."},{"pair":4,"name":"Выполнение полевых и камеральны…","type":"","room":"А-3","teacher":"Николаева С.И."}],
+    "2026-10-06":[{"pair":4,"name":"Выполнение полевых и камеральны…","type":"","room":"А-3","teacher":"Николаева С.И."},{"pair":5,"name":"Выполнение топографических съемо…","type":"","room":"А-3","teacher":"Николаева С.И."},{"pair":6,"name":"Иностранный язык в профессиональ…","type":"","room":"А-2","teacher":"Мальсагова А.А."}],
+    "2026-10-07":[{"pair":2,"name":"Основы геологии, геоморфологии, п…","type":"","room":"А-6","teacher":"Байцур С.А."},{"pair":3,"name":"Инженерная графика","type":"лекция","room":"А-3","teacher":"Николаева С.И."},{"pair":4,"name":"Математические методы решения пр…","type":"","room":"А-1","teacher":"Борисова Э.М."}],
+    "2026-10-08":[{"pair":3,"name":"Инженерная графика","type":"практ. занятие","room":"А-3","teacher":"Николаева С.И."},{"pair":4,"name":"Математические методы решения пр…","type":"","room":"А-1","teacher":"Борисова Э.М."},{"pair":5,"name":"Выполнение полевых и камеральны…","type":"","room":"А-3","teacher":"Николаева С.И."}],
+    "2026-10-09":[{"pair":2,"name":"Математические методы решения пр…","type":"","room":"А-1","teacher":"Борисова Э.М."},{"pair":3,"name":"Основы геологии, геоморфологии, п…","type":"","room":"А-2","teacher":"Байцур С.А."},{"pair":4,"name":"Выполнение топографических съемо…","type":"","room":"А-3","teacher":"Николаева С.И."}],
+    "2026-10-10":[{"pair":2,"name":"Основы геологии, геоморфологии, п…","type":"","room":"А-5","teacher":"Байцур С.А."},{"pair":3,"name":"Выполнение полевых и камеральны…","type":"","room":"А-3","teacher":"Николаева С.И."},{"pair":4,"name":"Выполнение полевых и камеральны…","type":"","room":"А-3","teacher":"Николаева С.И."}]
   };
   var DAYS=["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"];
   var MONTHS=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
@@ -105,8 +111,9 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px so
   function lessonsOn(d,all){
     var b=BELLS[d.getDay()];if(!b)return [];
     var L=(all[key(d)]||[]).slice().sort(function(a,c){return a.pair-c.pair});
-    return L.filter(function(l){return b[l.pair-1]}).map(function(l){
-      var t=b[l.pair-1];return {l:l,s:mins(t[0]),e:mins(t[1]),st:t[0],en:t[1]}});
+    return L.filter(function(l){return (l.start&&l.end)||b[l.pair-1]}).map(function(l){
+      var t=(l.start&&l.end)?[l.start,l.end]:b[l.pair-1];
+      return {l:l,s:mins(t[0]),e:mins(t[1]),st:t[0],en:t[1]}}).sort(function(a,c){return a.s-c.s});
   }
   function fmtT(m){m=Math.round(m);return pad(Math.floor(m/60))+":"+pad(m%60)}
   function barRow(a,b,p){return '<div class="line"><span>'+a+'</span><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+Math.round(p)+'"><div class="fill" id="fill"></div><i class="ring" id="ring"></i></div><span>'+b+'</span></div>'}
