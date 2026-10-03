@@ -39,15 +39,11 @@ h2{font-size:1rem;font-weight:500;color:var(--t2);margin:2.5rem 0 .6rem}
 .list li.now{background:var(--t);color:#000;border-radius:.4rem;border-top-color:transparent}
 .list .n{font-weight:500;overflow-wrap:anywhere}
 .list .r{font-size:.9rem;opacity:.7}
-details{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem;color:var(--t2);font-size:.9rem}
-summary{cursor:pointer;min-height:2.5rem;display:flex;align-items:center}
-textarea{width:100%;min-height:9rem;background:#000;color:var(--t);border:1px solid var(--t2);border-radius:.4rem;padding:.6rem;font:.85rem ui-monospace,Menlo,Consolas,monospace}
 button{font:inherit;color:var(--t);background:transparent;border:1px solid var(--t);border-radius:999px;padding:.5rem 1.1rem;min-height:2.75rem;margin:.6rem .5rem 0 0;cursor:pointer}
-button:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--t);outline-offset:3px}
+button:focus-visible{outline:2px solid var(--t);outline-offset:3px}
 .nav{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:2.25rem}
 .nav button{margin:0;min-width:2.75rem}
 .nav button.on{background:var(--t);color:#000}
-#msg{margin:.4rem 0 0}
 </style>
 </head>
 <body>
@@ -63,12 +59,6 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px so
   <h2 id="lh"></h2>
   <ul class="list" id="list"></ul>
 
-  <details>
-    <summary>Обновить расписание</summary>
-    <textarea id="json" spellcheck="false" aria-label="Расписание"></textarea>
-    <button type="button" id="save">Сохранить</button>
-    <p id="msg"></p>
-  </details>
 </main>
 
 <script>
@@ -99,9 +89,7 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px so
   var MONTHS=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
   var $=function(i){return document.getElementById(i)};
   var off=0;
-  function load(){try{return JSON.parse(localStorage.getItem("extra")||"{}")}catch(e){return {}}}
-  function store(o){try{localStorage.setItem("extra",JSON.stringify(o));return true}catch(e){return false}}
-  function data(){var e=load(),o={},k;for(k in BASE)o[k]=BASE[k];for(k in e)o[k]=e[k];return o}
+  function data(){return BASE}
   function key(d){var m=d.getMonth()+1,x=d.getDate();return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(x<10?"0":"")+x}
   function mins(s){var p=s.split(":");return +p[0]*60+ +p[1]}
   function pad(n){return n<10?"0"+n:""+n}
@@ -171,16 +159,6 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px so
     $("list").innerHTML=shown.length?shown.map(function(x){
       return '<li'+(cur===x&&off===0?' class="now"':'')+'><div>'+x.st+' – '+x.en+'</div><div><div class="n">'+esc(x.l.name)+'</div><div class="r">'+meta(x.l)+'</div></div></li>'}).join(""):'<li><div></div><div class="r">'+(BELLS[sd.getDay()]?"Нет пар":"Выходной")+'</div></li>';
   }
-  $("save").addEventListener("click",function(){
-    var m=$("msg");
-    try{
-      var o=JSON.parse($("json").value),e=load(),k,n=0;
-      if(!o||typeof o!=="object"||Array.isArray(o))throw new Error("format");
-      for(k in o){if(!/^\d{4}-\d{2}-\d{2}$/.test(k)||!Array.isArray(o[k]))throw new Error("format");e[k]=o[k];n++}
-      if(!store(e))throw new Error("store");
-      m.textContent="Сохранено дней: "+n;$("json").value="";render();
-    }catch(err){m.textContent="Не получилось: проверьте формат."}
-  });
   function go(n){off=Math.max(-60,Math.min(60,n));render()}
   $("prev").addEventListener("click",function(){go(off-1)});
   $("nextd").addEventListener("click",function(){go(off+1)});
