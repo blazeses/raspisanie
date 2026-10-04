@@ -15,7 +15,7 @@ html,body{margin:0;background:var(--bg);color:var(--t)}
 body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.4;min-height:100vh;
   padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
 main{max-width:30rem;margin:0 auto;padding:1.5rem 1.25rem 3rem}
-.day{color:var(--t2);font-size:.95rem;margin:0 0 1.5rem}
+.day{user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;padding:.25rem 0;color:var(--t2);font-size:.95rem;margin:0 0 1.5rem}
 .state{color:var(--t2);font-size:1rem;margin-bottom:.4rem}
 .title{font-size:clamp(1.6rem,7vw,2.2rem);font-weight:700;letter-spacing:-.01em;line-height:1.15;overflow-wrap:anywhere}
 .meta{color:var(--t2);margin:.5rem 0 1.5rem}
@@ -66,7 +66,7 @@ textarea:focus-visible,input:focus-visible,summary:focus-visible{outline:2px sol
   <h2 id="lh"></h2>
   <ul class="list" id="list"></ul>
 
-  <details>
+  <details id="editor" hidden>
     <summary>Обновить расписание</summary>
     <textarea id="json" spellcheck="false" aria-label="Расписание"></textarea>
     <div id="tokwrap" hidden><input id="tok" type="password" autocomplete="off" placeholder="Токен GitHub" aria-label="Токен GitHub"></div>
@@ -245,6 +245,15 @@ textarea:focus-visible,input:focus-visible,summary:focus-visible{outline:2px sol
   $("nextd").addEventListener("click",function(){go(off+1)});
   $("tod").addEventListener("click",function(){go(0)});
   $("tom").addEventListener("click",function(){go(1)});
+  (function(){
+    var ed=$("editor"),de=$("day"),n=0,t=0;
+    function show(){ed.hidden=false;ed.open=true;if(ed.scrollIntoView)ed.scrollIntoView({behavior:"smooth",block:"center"})}
+    if(location.hash==="#edit")show();
+    de.addEventListener("click",function(){
+      var now=Date.now();if(now-t>3000)n=0;t=now;n++;
+      if(n>=5){n=0;if(ed.hidden)show();else ed.hidden=true}
+    });
+  })();
   render();fetchRemote();setInterval(fetchRemote,300000);setInterval(render,1000);
 })();
 </script>
