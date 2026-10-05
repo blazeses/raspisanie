@@ -238,8 +238,9 @@ h1.lesson{
 .progress .ends{display:flex;justify-content:space-between;margin-top:8px;color:var(--fg-2);font-size:12px;font-variant-numeric:tabular-nums}
 
 /* ---------- visualization ---------- */
-.viz{position:relative;min-height:clamp(230px,42vw,520px);display:grid;place-items:center}
-#brain{width:100%;height:100%;display:block}
+.viz{position:relative;min-height:clamp(270px,50vw,600px);display:grid;place-items:center}
+#brain{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab}
+#brain.drag{cursor:grabbing}
 .viz .halo{
   position:absolute;inset:6% 4%;border-radius:50%;pointer-events:none;
   background:radial-gradient(closest-side,rgba(128,82,255,.16),transparent 72%);
@@ -1532,6 +1533,7 @@ var HERO=(function(){
   var CI=new Uint8Array(0),CG=new Float32Array(0),PHA=new Float32Array(0);
   var VX=new Float32Array(0),VY=new Float32Array(0),VS=new Float32Array(0),ORD=new Uint16Array(0);
   var t=0,tx=0,ty=0,mx=-1,my=-1;
+  var yaw=0,vyaw=0,pitch=0,dragging=false,lastX=0,lastY=0,dragId=-1,breath=1,SENS=.0045;
   var TAO=Math.PI*2;
   /* 0..3 белые/серые · 4 янтарь · 5 изумруд · 6 акцент · 7 цвет текущей пары */
   var C=["#ffffff","#ffffff","#ffffff","#bdbdbd","#bdbdbd","#ffb829","#15846e","#8052ff","#9a9a9a"];
@@ -1539,14 +1541,14 @@ var HERO=(function(){
 
   function build(){
     var r=cv.getBoundingClientRect();
-    W=Math.max(200,Math.floor(r.width));
-    H=Math.max(160,Math.floor(r.height));
+    W=Math.max(200,Math.floor(r.width*dpr));
+    H=Math.max(160,Math.floor(r.height*dpr));
     if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
     cx=W*.5;cy=H*.5;
-    var RR=Math.min(W,H)*.42;
-    rad=Math.min(RR,Math.max(W,H)*.24);
+    var RR=Math.min(W,H)*.5;
+    rad=Math.min(RR,Math.max(W,H)*.29);
 
-    count=reduce?520:Math.round(Math.min(1500,Math.max(460,(W*H)/225)));
+    count=reduce?520:Math.round(Math.min(1500,Math.max(460,(W*H)/(225*dpr*dpr))));
     if(X.length<count){
       X=new Float32Array(count);Y=new Float32Array(count);Z=new Float32Array(count);SZ=new Float32Array(count);
       CI=new Uint8Array(count);CG=new Float32Array(count);PHA=new Float32Array(count);
@@ -1596,7 +1598,7 @@ var HERO=(function(){
       var sy2=py/pl,px2=px/pl,pz2=pz/pl;
       CG[i]=Math.acos(Math.max(-1,Math.min(1,sy2)));
       PHA[i]=Math.atan2(pz2,px2);
-      SZ[i]=(shellDepth>1.1?5.4:shellDepth>0.6?4.6:3.8)*dpr*(.62+Math.random()*.7);
+      SZ[i]=(shellDepth>1.1?5.4:shellDepth>0.6?4.6:3.8)*dpr*dpr*(.62+Math.random()*.7);
       var pick=Math.random();
       CI[i]=pick<.14?6:(pick<.22?4:(pick<.30?3:(pick<.35?5:(pick<.42?8:0))));
       if(py>top2)top2=py;
@@ -1610,6 +1612,10 @@ var HERO=(function(){
 
   function frame(){
     t+=.0022;
+    /* вращение рукой: инерция затухает, наклон мягко возвращается */
+    if(!dragging){yaw+=vyaw;vyaw*=.94;if(Math.abs(vyaw)<.00005)vyaw=0;pitch*=.96}
+    /* дыхание: период ≈ 6 c, амплитуда ≈ 12% */
+    breath=reduce?1:1+.12*Math.sin(performance.now()/1000*1.05);
     tx+=((my>=0?my/H-.5:0)-tx)*.05;
     ty+=((mx>=0?mx/W-.5:0)-ty)*.05;
 
@@ -1625,8 +1631,8 @@ var HERO=(function(){
     glow.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=glow;ctx.fillRect(0,0,W,H);
 
-    var ca=Math.cos(t),sa=Math.sin(t);
-    var cb=Math.cos(t*.55+tx*.7),sb=Math.sin(t*.55+tx*.7);
+    var ca=Math.cos(t+yaw),sa=Math.sin(t+yaw);
+    var cb=Math.cos(t*.55+tx*.7+pitch),sb=Math.sin(t*.55+tx*.7+pitch);
     var total=Math.max(1,state.total),per=count/total;
     var nowAng=state.done*TAO/total+state.progress*TAO/total;
     var hasState=state.total>0;
@@ -1647,9 +1653,9 @@ var HERO=(function(){
       var x1=x*ca-z*sa, z1=x*sa+z*ca;
       var y1=y*cb-z1*sb, z2=y*sb+z1*cb;
       var persp=1/(2.5-z2*.9);
-      VX[i]=cx+x1*rad*persp*1.75;
-      VY[i]=cy+y1*rad*persp*1.5+ty*H*.14;
-      VS[i]=SZ[i]*mul*persp*1.7;
+      VX[i]=cx+x1*rad*breath*persp*1.75;
+      VY[i]=cy+y1*rad*breath*persp*1.5+ty*H*.14;
+      VS[i]=SZ[i]*mul*persp*1.7*(1+(breath-1)*1.0);
       Z[i]=z;
     }
 
@@ -1660,21 +1666,21 @@ var HERO=(function(){
       ORD[b+1]=key;
     }
 
-    ctx.lineWidth=1.05;
+    ctx.lineWidth=1.05*dpr;ctx.lineJoin="round";ctx.lineCap="round";
     for(var k=0;k<count;k++){
-      var idx=ORD[k],sz=VS[idx];
-      if(sz<.62)continue;
+      var idx=ORD[k],sz=VS[idx],szr=sz/dpr;
+      if(szr<.62)continue;
       var px=VX[idx],py=VY[idx];
       if(px<-26||px>W+26||py<-26||py>H+26)continue;
       var stroke=C[CI[idx]]||"#ffffff";
-      ctx.globalAlpha=Math.min(.95,.12+sz*.5);
+      ctx.globalAlpha=Math.min(.95,.12+szr*.5);
       ctx.strokeStyle=stroke;
       ctx.beginPath();
       ctx.moveTo(px,py-sz*.62);
       ctx.lineTo(px+sz*.56,py+sz*.44);
       ctx.lineTo(px-sz*.56,py+sz*.44);
       ctx.stroke();
-      if(sz>5.4){
+      if(szr>5.4){
         ctx.globalAlpha*=.45;ctx.fillStyle=stroke;
         ctx.beginPath();
         ctx.moveTo(px,py-sz*.62);
@@ -1689,9 +1695,30 @@ var HERO=(function(){
 
   cv.addEventListener("pointermove",function(e){
     var r=cv.getBoundingClientRect();
-    mx=e.clientX-r.left;my=e.clientY-r.top;
+    mx=(e.clientX-r.left)*dpr;my=(e.clientY-r.top)*dpr;
   });
   cv.addEventListener("pointerleave",function(){mx=-1;my=-1});
+  /* перетаскивание: на тач-экране только по горизонтали (вертикаль — прокрутка страницы) */
+  cv.addEventListener("pointerdown",function(e){
+    if(e.pointerType==="mouse"&&e.button!==0)return;
+    dragging=true;dragId=e.pointerId;lastX=e.clientX;lastY=e.clientY;vyaw=0;
+    cv.classList.add("drag");
+    try{cv.setPointerCapture(e.pointerId)}catch(_){}
+  });
+  cv.addEventListener("pointermove",function(e){
+    if(!dragging||e.pointerId!==dragId)return;
+    var dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;
+    var d=dx*SENS;yaw+=d;vyaw=d*.6+vyaw*.4;
+    if(e.pointerType!=="touch")pitch=Math.max(-.5,Math.min(.5,pitch+dy*SENS*.8));
+    if(reduce)frame();
+  });
+  function endDrag(e){
+    if(e.pointerId!==dragId)return;
+    dragging=false;dragId=-1;cv.classList.remove("drag");
+    vyaw=Math.max(-.03,Math.min(.03,vyaw));
+  }
+  cv.addEventListener("pointerup",endDrag);
+  cv.addEventListener("pointercancel",endDrag);
   var rt;
   addEventListener("resize",function(){
     clearTimeout(rt);
