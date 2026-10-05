@@ -146,6 +146,11 @@ header.top{
 }
 .pill:hover{transform:translateY(-1px);filter:brightness(1.08)}
 .pill:active{transform:translateY(0) scale(.985)}
+/* убираем голубую подсветку нажатия Chrome/Android и выделение при тапах */
+*{-webkit-tap-highlight-color:transparent}
+button,a,summary,canvas,.strip,.days,.chip,.arrow{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#gc,#gc:focus,#gc:focus-visible{outline:none;-webkit-tap-highlight-color:transparent}
+#gc::selection,canvas::selection{background:transparent}
 :focus-visible{outline:2px solid var(--hot);outline-offset:3px;border-radius:6px}
 
 /* ---------- layout ---------- */
@@ -508,7 +513,7 @@ footer.foot .sep{margin-left:auto}
     <section class="sec" id="game">
       <details class="gbox" id="gbox">
         <summary class="gsum">
-          <span class="gsum-t"><small>Игра</small><b>Флэппи на перемене</b></span>
+          <span class="gsum-t"><small>Игра</small><b>Флэппи</b></span>
           <span class="gsum-hint" id="gtip"></span>
           <span class="score" id="gscore">Рекорд: <b>0</b></span>
         </summary>
