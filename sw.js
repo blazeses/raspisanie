@@ -1,5 +1,5 @@
 /* Service worker: офлайн-оболочка для расписания. */
-const CACHE = 'rasp-v6';
+const CACHE = 'rasp-v10';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {

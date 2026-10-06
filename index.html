@@ -1239,14 +1239,14 @@ var G=(function(){
   try{best=+localStorage.getItem("flap")||0}catch(e){}
   cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
 
-  var GAP=150,BX=86,S=28,COL=58,COLX=BX-16;
+  var GAP=150,BX=86,S=28,COL=58,COLX=BX-16,HB=10;/* HB — половина стороны хитбокса игрока: меньше рисунка (S/2=14), чтобы не гибнуть «в воздухе» */
   function resetDust(d){d.dust=[];for(var i=0;i<22;i++)d.dust.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*2+.6,a:Math.random()*.5+.15,v:Math.random()*.35+.1})}
 
   function blank(){s={y:H/2,v:0,p:[],t:0,n:0,on:false,dead:false,dt:0,rot:0,dust:[]};resetDust(s)}
   function flap(){if(!run)return;if(s.dead){if(Date.now()-s.dt>500)blank();return}s.on=true;s.v=-6.4}
   function die(){s.dead=true;s.dt=Date.now();
     if(s.n>best){best=s.n;try{localStorage.setItem("flap",best)}catch(e){}}}
-  /* Хитбокс совпадает с рисунком: центр птицы — s.y, колонна потока — COL×COLX. */
+  /* Хитбокс чуть меньше рисунка: игрок — квадрат 2×HB вокруг s.y, колонна потока сужена на 6 px с боков, проём расширен на 4 px сверху и снизу. */
   function step(){
     s.dust.forEach(function(q){q.x-=q.v;if(q.x<-4){q.x=W+4;q.y=Math.random()*H}});
     if(!s.on||s.dead)return;
@@ -1254,9 +1254,9 @@ var G=(function(){
     if(s.t%92===1)s.p.push({x:W+COL,g:56+Math.random()*(H-112-GAP),c:false});
     s.p.forEach(function(q){q.x-=2.45;
       if(!q.c&&q.x+COL<COLX){q.c=true;s.n++}
-      if(COLX+S/2>q.x&&COLX-S/2<q.x+COL&&(s.y-S/2<q.g||s.y+S/2>q.g+GAP))die()});
+      if(COLX+HB>q.x+6&&COLX-HB<q.x+COL-6&&(s.y-HB<q.g-4||s.y+HB>q.g+GAP+4))die()});
     s.p=s.p.filter(function(q){return q.x>-COL-30});
-    if(s.y-S/2<0||s.y+S/2>H)die();
+    if(s.y-HB<-4||s.y+HB>H+4)die();
   }
   function tri(x,y,size,stroke,fill,rot,lw){
     ctx.save();ctx.translate(x,y);ctx.rotate(rot||0);
