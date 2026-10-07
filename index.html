@@ -779,7 +779,7 @@ function sanitize(o){
 /* ============================================================
    5. Отрисовка: герой, список, полоса дней
    ============================================================ */
-var off=0,lastOff=0,cycleIx=0,tickIx=-1,lastBig="",lastListKey="",stripKey="";
+var off=0,lastOff=0,lastBig="",lastListKey="",stripKey="";
 var last={heroKey:"",phase:"",cur:null,next:null,today:[],all:{},bar:null,ready:false};
 
 /* «Стабильный» отпечаток героя: меняющиеся цифры отсчёта и подсветка
@@ -889,7 +889,7 @@ function render(){
     if(nm>=today[i].s&&nm<today[i].e){cur=today[i];break}
     if(nm<today[i].s){next=today[i];break}
   }
-  last.all=all;last.today=today;last.cur=cur;last.next=next;last.bar=null;
+  last.all=all;last.today=today;last.cur=cur;last.next=next;last.bar=null;last.day=now.getDate();
 
   /* --- шапка --- */
   var dstr=DAYS_SHORT[now.getDay()].toUpperCase()+" · "+now.getDate()+" "+MONTHS[now.getMonth()];
@@ -931,7 +931,7 @@ function render(){
         if(pv){
           var span=next.s-pv.e;
           html+=progressHTML(pv.en,next.st);
-          last.bar={pct:span>0?Math.max(0,Math.min(100,(nm-pv.e)/span*100)):100,hotEnd:false};
+          last.bar={pct:span>0?Math.max(0,Math.min(100,(nm-pv.e)/span*100)):100,hotEnd:false,span:span>0?span:0};
         }
       }
     }else{
@@ -988,31 +988,36 @@ function render(){
 
 /* Тик раз в секунду: двигает цифры и подсветку, ничего не перерисовывая. */
 function tick(force){
-  cycleIx++;if(cycleIx>3)cycleIx=0;
-  if(tickIx===cycleIx&&!force)return;
-  tickIx=cycleIx;
   if(!last.ready||!$("left"))return;
   var now=new Date();
   var nm=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
-  var ms=now.getSeconds()*1000+now.getMilliseconds();
+  var secNow=now.getHours()*3600+now.getMinutes()*60+now.getSeconds()+now.getMilliseconds()/1000;
   var cur=last.cur,next=last.next;
+
+  /* Пара закончилась / началась или сменился день — перерисовываем сразу,
+     а не ждём минутный render (иначе таймер «зависал» на 0:00 до 59 с). */
+  var ts=now.getTime();
+  if((cur&&nm>=cur.e)||(!cur&&next&&nm>=next.s)||now.getDate()!==last.day){
+    if(ts-(last.rt||0)>400){last.rt=ts;render();return}
+  }
 
   var txt="",hot=false;
   if(cur){
-    var left=(cur.e-nm)*60;
-    txt=hms(Math.max(0,left-(ms/1000)));
+    var left=cur.e*60-secNow;
+    txt=hms(Math.max(0,Math.ceil(left)));
     hot=left<=300;
   }else if(next){
-    txt=hms(Math.max(0,(next.s-nm)*60-(ms/1000)));
+    txt=hms(Math.max(0,Math.ceil(next.s*60-secNow)));
   }
-  if(txt&&txt!==lastBig){lastBig=txt;setBig(txt,hot)}
+  var el=$("left");
+  if(txt&&(txt!==lastBig||!el.getAttribute("data-len"))){lastBig=txt;setBig(txt,hot)}
 
   var bar=last.bar;
   if(bar){
     var pct=bar.pct;
-    if(cur)pct=Math.max(0,Math.min(100,(nm-cur.s)/(cur.e-cur.s)*100));
+    if(cur)pct=Math.max(0,Math.min(100,(secNow/60-cur.s)/(cur.e-cur.s)*100));
     else if(last.next&&bar.span){
-      pct=Math.max(0,Math.min(100,(nm-(last.next.s-bar.span))/bar.span*100));
+      pct=Math.max(0,Math.min(100,(secNow/60-(last.next.s-bar.span))/bar.span*100));
     }
     paintProgress(pct,bar.hotEnd);
   }
@@ -1243,9 +1248,11 @@ var G=(function(){
   function resetDust(d){d.dust=[];for(var i=0;i<22;i++)d.dust.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*2+.6,a:Math.random()*.5+.15,v:Math.random()*.35+.1})}
 
   function blank(){s={y:H/2,v:0,p:[],t:0,n:0,on:false,dead:false,dt:0,rot:0,dust:[]};resetDust(s)}
-  function flap(){if(!run)return;if(s.dead){if(Date.now()-s.dt>500)blank();return}s.on=true;s.v=-6.4}
-  function die(){s.dead=true;s.dt=Date.now();
-    if(s.n>best){best=s.n;try{localStorage.setItem("flap",best)}catch(e){}}}
+  function flap(){if(!run)return;if(s.dead){if(Date.now()-s.dt>500)blank();return}if(!s.on&&window.__orb)__orb.launch(pp);s.on=true;s.v=-6.4}
+  function pp(){var r=cv.getBoundingClientRect(),k=r.width/W;return{x:r.left+COLX*k,y:r.top+s.y*k}}
+  function die(){s.dead=true;s.dt=Date.now();var rec=s.n>best&&s.n>0;
+    if(s.n>best){best=s.n;try{localStorage.setItem("flap",best)}catch(e){}}
+    if(window.__orb)__orb.back(pp(),rec)}
   /* Хитбокс чуть меньше рисунка: игрок — квадрат 2×HB вокруг s.y, колонна потока сужена на 6 px с боков, проём расширен на 4 px сверху и снизу. */
   function step(){
     s.dust.forEach(function(q){q.x-=q.v;if(q.x<-4){q.x=W+4;q.y=Math.random()*H}});
@@ -1253,7 +1260,7 @@ var G=(function(){
     s.v+=.345;s.y+=s.v;s.t++;s.rot=Math.max(-.7,Math.min(1,s.v/10));
     if(s.t%92===1)s.p.push({x:W+COL,g:56+Math.random()*(H-112-GAP),c:false});
     s.p.forEach(function(q){q.x-=2.45;
-      if(!q.c&&q.x+COL<COLX){q.c=true;s.n++}
+      if(!q.c&&q.x+COL<COLX){q.c=true;s.n++;if(window.__orb)__orb.pulse(.45)}
       if(COLX+HB>q.x+6&&COLX-HB<q.x+COL-6&&(s.y-HB<q.g-4||s.y+HB>q.g+GAP+4))die()});
     s.p=s.p.filter(function(q){return q.x>-COL-30});
     if(s.y-HB<-4||s.y+HB>H+4)die();
@@ -1533,7 +1540,7 @@ var HERO=(function(){
   var CI=new Uint8Array(0),CG=new Float32Array(0),PHA=new Float32Array(0);
   var VX=new Float32Array(0),VY=new Float32Array(0),VS=new Float32Array(0),ORD=new Uint16Array(0); var OX=new Float32Array(0),OY=new Float32Array(0),OVX=new Float32Array(0),OVY=new Float32Array(0),FX=new Float32Array(0),FY=new Float32Array(0),DL=new Float32Array(0),EA=new Float32Array(0); /* сборка при каждом открытии страницы; внутри открытой страницы (сворачивание, поворот, resize) заново не запускается */ var IN_MS=1500,t0=0,introOn=!reduce,ic=null,ictx=null;
   var t=0,tx=0,ty=0,mx=-1,my=-1;
-  var yaw=0,vyaw=0,pitch=0,dragging=false,lastX=0,lastY=0,dragId=-1,breath=1,SENS=.0045;
+  var yaw=0,vyaw=0,pitch=0,dragging=false,lastX=0,lastY=0,dragId=-1,breath=1,SENS=.0045,pls=0,glw=0,mph=0,mphT=0,mphE=0,holdTm=0,hx=0,hy=0,tmMin=-1,TX=new Float32Array(0),TY=new Float32Array(0);/* удержание шара: частицы складываются во время, отпускание — возвращаются */function buildTime(){var d=new Date(),m=d.getMinutes();tmMin=m;var str=("0"+d.getHours()).slice(-2)+":"+("0"+m).slice(-2);var oc=document.createElement("canvas");oc.width=360;oc.height=120;var o=oc.getContext("2d");o.fillStyle="#fff";o.font="700 104px Inter,system-ui,sans-serif";o.textAlign="center";o.textBaseline="middle";o.fillText(str,180,64);var im=o.getImageData(0,0,360,120).data,pts=[];for(var y=0;y<120;y+=3)for(var x=0;x<360;x+=3)if(im[(y*360+x)*4+3]>128)pts.push(x,y);var n=pts.length/2;if(!n)return;var sc=Math.min(W*.86,rad*2.7)/360;for(var i=0;i<count;i++){var q=(Math.random()*n)|0;TX[i]=cx+(pts[q*2]-180)*sc;TY[i]=cy+(pts[q*2+1]-64)*sc}}window.__orbHero={pos:function(){var r=cv.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}},pulse:function(v){pls=Math.max(pls,v)},flash:function(){glw=1;pls=1},kick:function(f){for(var i=0;i<count;i++){var a=Math.random()*6.283,m=rad*f*(.4+Math.random());OVX[i]+=Math.cos(a)*m;OVY[i]+=Math.sin(a)*m}}};
   var TAO=Math.PI*2;
   /* 0..3 белые/серые · 4 янтарь · 5 изумруд · 6 акцент · 7 цвет текущей пары */
   var C=["#ffffff","#ffffff","#ffffff","#bdbdbd","#bdbdbd","#ffb829","#15846e","#8052ff","#9a9a9a"];
@@ -1552,7 +1559,7 @@ var HERO=(function(){
     if(X.length<count){
       X=new Float32Array(count);Y=new Float32Array(count);Z=new Float32Array(count);SZ=new Float32Array(count);
       CI=new Uint8Array(count);CG=new Float32Array(count);PHA=new Float32Array(count);
-      VX=new Float32Array(count);VY=new Float32Array(count);VS=new Float32Array(count);ORD=new Uint16Array(count); OX=new Float32Array(count);OY=new Float32Array(count);OVX=new Float32Array(count);OVY=new Float32Array(count);FX=new Float32Array(count);FY=new Float32Array(count);DL=new Float32Array(count);EA=new Float32Array(count);
+      VX=new Float32Array(count);VY=new Float32Array(count);VS=new Float32Array(count);ORD=new Uint16Array(count); OX=new Float32Array(count);OY=new Float32Array(count);OVX=new Float32Array(count);OVY=new Float32Array(count);FX=new Float32Array(count);FY=new Float32Array(count);DL=new Float32Array(count);EA=new Float32Array(count);TX=new Float32Array(count);TY=new Float32Array(count);
     }
 
     /* Органическая форма: поле из гауссовых ядер (две «доли», ствол, борозда).
@@ -1615,7 +1622,7 @@ var HERO=(function(){
     /* вращение рукой: инерция затухает, наклон мягко возвращается */
     if(!dragging){yaw+=vyaw;vyaw*=.94;if(Math.abs(vyaw)<.00005)vyaw=0;pitch*=.96}
     /* дыхание: период ≈ 6 c, амплитуда ≈ 12% */
-    breath=reduce?1:1+.12*Math.sin(performance.now()/1000*1.05);
+    breath=reduce?1:1+.12*Math.sin(performance.now()/1000*1.05);pls*=.9;glw*=.97;breath+=pls*.1;mph+=(mphT-mph)*.14;mphE=mph*mph*(3-2*mph);if(mphT===1&&new Date().getMinutes()!==tmMin)buildTime();
     tx+=((my>=0?my/H-.5:0)-tx)*.05;
     ty+=((mx>=0?mx/W-.5:0)-ty)*.05;
 
@@ -1653,9 +1660,9 @@ var HERO=(function(){
       var x1=x*ca-z*sa, z1=x*sa+z*ca;
       var y1=y*cb-z1*sb, z2=y*sb+z1*cb;
       var persp=1/(2.5-z2*.9);
-      var e=introOn?Math.max(0,Math.min(1,(nowT-t0-DL[i])/IN_MS)):1,kk=1-Math.pow(1-e,3);EA[i]=e;var bx=cx+x1*rad*breath*persp*1.75+FX[i]*(1-kk),by=cy+y1*rad*breath*persp*1.5+ty*H*.14+FY[i]*(1-kk);/* палец (и курсор) отталкивает частицы, пружина возвращает */if(!reduce&&mx>=0&&e>.6){var ddx=bx+OX[i]-mx,ddy=by+OY[i]-my,dd=Math.sqrt(ddx*ddx+ddy*ddy)||1;if(dd<rr){var ff=1-dd/rr;ff=ff*ff*(dragging?1.6:1)*st;OVX[i]+=ddx/dd*ff;OVY[i]+=ddy/dd*ff}}OVX[i]+=-OX[i]*.045;OVY[i]+=-OY[i]*.045;OVX[i]*=.88;OVY[i]*=.88;OX[i]+=OVX[i];OY[i]+=OVY[i];VX[i]=bx+OX[i];
-      VY[i]=by+OY[i];
-      VS[i]=SZ[i]*mul*persp*1.7*(1+(breath-1)*1.0);
+      var e=introOn?Math.max(0,Math.min(1,(nowT-t0-DL[i])/IN_MS)):1,kk=1-Math.pow(1-e,3);EA[i]=e;var bx=cx+x1*rad*breath*persp*1.75+FX[i]*(1-kk),by=cy+y1*rad*breath*persp*1.5+ty*H*.14+FY[i]*(1-kk);/* палец (и курсор) отталкивает частицы, пружина возвращает */if(!reduce&&mx>=0&&e>.6&&mphT===0){var ddx=bx+OX[i]-mx,ddy=by+OY[i]-my,dd=Math.sqrt(ddx*ddx+ddy*ddy)||1;if(dd<rr){var ff=1-dd/rr;ff=ff*ff*(dragging?1.6:1)*st;OVX[i]+=ddx/dd*ff;OVY[i]+=ddy/dd*ff}}OVX[i]+=-OX[i]*.045;OVY[i]+=-OY[i]*.045;OVX[i]*=.88;OVY[i]*=.88;OX[i]+=OVX[i];OY[i]+=OVY[i];VX[i]=bx+OX[i];if(mphE>.001)VX[i]+=(TX[i]-VX[i])*mphE;
+      VY[i]=by+OY[i];if(mphE>.001)VY[i]+=(TY[i]-VY[i])*mphE;
+      VS[i]=SZ[i]*mul*persp*1.7*(1+(breath-1)*1.0)*(1-.4*mphE);
       Z[i]=z;
     }
 
@@ -1684,8 +1691,8 @@ var HERO=(function(){
       if(og&&ev<1){g=og;px=offX+px*sc0;py=offY+py*sc0;sz*=sc0;
         if(px<-26||px>ow+26||py<-26||py>oh+26)continue}
       else if(px<-26||px>W+26||py<-26||py>H+26)continue;
-      var stroke=C[CI[idx]]||"#ffffff";
-      g.globalAlpha=Math.min(.95,.12+szr*.5)*Math.min(1,ev*3);
+      var stroke=C[CI[idx]]||"#ffffff";if(glw>.04&&CI[idx]<3&&(idx%10)<glw*10)stroke=C[6];
+      g.globalAlpha=Math.min(.95,.12+szr*.5+mphE*.35)*Math.min(1,ev*3);
       g.strokeStyle=stroke;
       g.beginPath();
       g.moveTo(px,py-sz*.62);
@@ -1713,20 +1720,20 @@ var HERO=(function(){
   /* перетаскивание: на тач-экране только по горизонтали (вертикаль — прокрутка страницы) */
   cv.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse"&&e.button!==0)return;
-    dragging=true;dragId=e.pointerId;lastX=e.clientX;lastY=e.clientY;vyaw=0;
+    dragging=true;dragId=e.pointerId;lastX=e.clientX;lastY=e.clientY;vyaw=0;hx=e.clientX;hy=e.clientY;clearTimeout(holdTm);holdTm=setTimeout(function(){if(dragging&&!reduce){buildTime();mphT=1;if(navigator.vibrate)try{navigator.vibrate(15)}catch(_){}}},380);
     cv.classList.add("drag");
     try{cv.setPointerCapture(e.pointerId)}catch(_){}
   });
   cv.addEventListener("pointermove",function(e){
     if(!dragging||e.pointerId!==dragId)return;
-    var dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;
+    var dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;if(mphT===0&&Math.abs(e.clientX-hx)+Math.abs(e.clientY-hy)>14)clearTimeout(holdTm);
     var d=dx*SENS;yaw+=d;vyaw=d*.6+vyaw*.4;
     if(e.pointerType!=="touch")pitch=Math.max(-.5,Math.min(.5,pitch+dy*SENS*.8));
     if(reduce)frame();
   });
   function endDrag(e){
     if(e.pointerId!==dragId)return;
-    dragging=false;dragId=-1;cv.classList.remove("drag");
+    dragging=false;dragId=-1;cv.classList.remove("drag");clearTimeout(holdTm);mphT=0;
     vyaw=Math.max(-.02,Math.min(.02,vyaw));
   }
   cv.addEventListener("pointerup",endDrag);
@@ -1752,7 +1759,7 @@ HERO.setState({total:0,done:0,progress:0});
 addEventListener("visibilitychange",function(){if(!document.hidden){fetchRemote();render()}});
 $("fref").textContent="Данные: blazeses/raspisanie · стиль Dala";
 render();fetchRemote();
-setInterval(function(){if(!document.hidden)tick();},1000);
+setInterval(function(){if(!document.hidden)tick();},250);
 setInterval(render,60000);
 setInterval(fetchRemote,300000);
 })();
@@ -1761,6 +1768,18 @@ setInterval(fetchRemote,300000);
 if("serviceWorker" in navigator&&location.protocol!=="file:"){
   window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})});
 }
+</script>
+<script>
+/* Шар ↔ игра: только реакция шара (без летящего треугольника). Рекорд — шар вспыхивает акцентом. */
+(function(){
+var reduce=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+function hero(){return window.__orbHero}
+window.__orb={
+  launch:function(){var h=hero();if(h&&!reduce)h.pulse(.3)},
+  back:function(p,rec){var h=hero();if(!h||reduce)return;if(rec){h.flash();h.kick(.035)}else h.pulse(1)},
+  pulse:function(v){var h=hero();if(h)h.pulse(v)}
+};
+})();
 </script>
 </body>
 </html>
