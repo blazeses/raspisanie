@@ -222,20 +222,11 @@ h1.lesson{
 .big.hot .col>span{animation:roll .5s var(--ease-out),pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.55}}
 
-/* ---------- progress constellation ---------- */
-.progress{margin-top:clamp(18px,2.6vh,30px)}
-.progress .track{display:flex;align-items:flex-end;height:20px}
-.progress .tri{
-  width:0;height:0;flex:1;min-width:0;
-  border-left:7px solid transparent;border-right:7px solid transparent;
-  border-bottom:11px solid rgba(255,255,255,.16);
-  transition:border-bottom-color .6s var(--ease),transform .6s var(--ease);
-  transform-origin:50% 100%;
-}
-.progress .tri.on{border-bottom-color:var(--accent);animation:lit .5s var(--ease-out) both}
-.progress .tri.now{border-bottom-color:var(--hot);transform:translateY(-3px) scale(1.22)}
-@keyframes lit{from{transform:scale(.4);opacity:0}}
-.progress .ends{display:flex;justify-content:space-between;margin-top:8px;color:var(--fg-2);font-size:12px;font-variant-numeric:tabular-nums}
+/* ---------- progress wave ---------- */
+.progress{margin-top:clamp(18px,2.6vh,30px);width:100%}
+.progress .track{position:relative;width:100%;height:32px;display:flex;align-items:center}
+.progress .prog-canvas{width:100%;height:32px;display:block}
+.progress .ends{display:flex;justify-content:space-between;margin-top:4px;color:var(--fg-2);font-size:12px;font-variant-numeric:tabular-nums}
 
 /* ---------- visualization ---------- */
 .viz{position:relative;min-height:clamp(270px,50vw,600px);display:grid;place-items:center}
@@ -550,6 +541,7 @@ footer.foot .sep{margin-left:auto}
     <div class="pal" id="pal" role="group" aria-label="Акцентный цвет"></div>
   </div>
 
+
   <div class="field">
     <span class="field-lab">Игра</span>
     <div class="row">
@@ -837,29 +829,168 @@ function setBig(text,hot){
   el.classList.toggle("hot",!!hot);
 }
 
+/* ============================================================
+   Волновой прогресс-бар (Squiggly Wave)
+   ============================================================ */
+var WAVE_PROG = (function(){
+  var cv = null, ctx = null;
+  var currentPct = 0, targetPct = 0;
+  var isHot = false;
+  var animId = null;
+  var t = 0;
+  var lastTs = 0;
+  var active = false;
+  var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function initCanvas(canvasEl){
+    if (cv === canvasEl && ctx) return;
+    cv = canvasEl;
+    if (!cv) { active = false; return; }
+    ctx = cv.getContext("2d");
+    active = true;
+    startLoop();
+  }
+
+  function resize(){
+    if (!cv) return;
+    var rect = cv.getBoundingClientRect();
+    if (!rect.width) return;
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    var nw = Math.round(rect.width * dpr);
+    var nh = Math.round((rect.height || 32) * dpr);
+    if (cv.width !== nw || cv.height !== nh) {
+      cv.width = nw;
+      cv.height = nh;
+    }
+  }
+
+  function draw(dt){
+    if (!cv || !ctx) return;
+    resize();
+    var W = cv.width, H = cv.height;
+    if (!W || !H) return;
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    ctx.clearRect(0, 0, W, H);
+
+    currentPct += (targetPct - currentPct) * 0.15;
+    if (Math.abs(targetPct - currentPct) < 0.05) currentPct = targetPct;
+
+    var midY = H / 2;
+    var pNorm = Math.max(0, Math.min(100, currentPct)) / 100;
+    var xProg = pNorm * W;
+
+    var cs = getComputedStyle(document.documentElement);
+    // Цвет волны динамически привязан к активной теме (белая тема -> белая линия, фиолетовая -> фиолетовая и т.д.)
+    var accent = (typeof CSSV !== "undefined" && CSSV.accent) ? CSSV.accent : ((cs.getPropertyValue("--accent") || "#8052ff").trim());
+
+    // 1. Оставшаяся часть: полупрозрачная прямая линия
+    ctx.beginPath();
+    ctx.lineWidth = 2 * dpr;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.lineCap = "round";
+    var startUnpassed = Math.min(W, xProg + 2 * dpr);
+    if (startUnpassed < W) {
+      ctx.moveTo(startUnpassed, midY);
+      ctx.lineTo(W - 2 * dpr, midY);
+      ctx.stroke();
+    }
+
+    // 2. Пройденная часть: анимированная синусоида в цвете активной палитры
+    if (xProg > 2 * dpr) {
+      var amp = 4.4 * dpr;
+      var wavelength = 56 * dpr; // Разреженная частота — широкие мягкие волны как на референсе
+      var k = (Math.PI * 2) / wavelength;
+      var speed = reduce ? 0 : 2.2; // Спокойная скорость колебаний
+      t += dt * speed;
+
+      ctx.beginPath();
+      ctx.lineWidth = 2.6 * dpr;
+      ctx.strokeStyle = accent;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      var step = Math.max(1, Math.round(1.5 * dpr));
+      for (var x = 0; x <= xProg; x += step) {
+        var distToEnd = xProg - x;
+        var distToStart = x;
+        var dampEnd = Math.min(1, distToEnd / (18 * dpr));
+        var dampStart = Math.min(1, distToStart / (14 * dpr));
+        var damp = dampEnd * dampStart;
+
+        var y = midY + Math.sin(x * k - t) * amp * damp;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(xProg, midY);
+      ctx.stroke();
+    }
+
+    // 3. Вертикальный маркер-капсула '|' в точке текущего прогресса
+    if (pNorm > 0 && pNorm < 1) {
+      var markerW = 3.2 * dpr;
+      var markerH = 16 * dpr;
+      var markerX = Math.max(markerW / 2, Math.min(W - markerW / 2, xProg));
+      var markerY = midY - markerH / 2;
+      var cornerR = markerW / 2;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(markerX - markerW / 2, markerY, markerW, markerH, cornerR);
+      } else {
+        ctx.arc(markerX, markerY + cornerR, cornerR, Math.PI, 0);
+        ctx.arc(markerX, markerY + markerH - cornerR, cornerR, 0, Math.PI);
+        ctx.closePath();
+      }
+      ctx.fill();
+    }
+  }
+
+  function loop(ts){
+    if (!active) { animId = null; return; }
+    if (!cv || !cv.isConnected) {
+      active = false;
+      animId = null;
+      return;
+    }
+    if (!lastTs) lastTs = ts;
+    var dt = Math.min(0.1, (ts - lastTs) / 1000);
+    lastTs = ts;
+
+    if (!document.hidden) {
+      draw(dt);
+    }
+    animId = requestAnimationFrame(loop);
+  }
+
+  function startLoop(){
+    if (!animId) {
+      lastTs = performance.now();
+      animId = requestAnimationFrame(loop);
+    }
+  }
+
+  return {
+    set: function(canvasEl, pct, hot){
+      initCanvas(canvasEl);
+      targetPct = pct;
+      isHot = !!hot;
+      if (!animId) startLoop();
+    }
+  };
+})();
+
 function progressHTML(a,b){
-  var N=7,tri="";
-  for(var i=0;i<N;i++)tri+='<i class="tri"></i>';
   return '<div class="progress" id="prog" role="progressbar" aria-label="Ход пары" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">'+
-    '<div class="track">'+tri+'</div>'+
+    '<div class="track"><canvas id="prog-cv" class="prog-canvas"></canvas></div>'+
     '<div class="ends"><span>'+esc(a)+'</span><span>'+esc(b)+'</span></div></div>';
 }
 
-/* Прогресс обновляется на месте: заново рисуем только когда меняются подписи. */
 function paintProgress(pct,hotEnd){
   var p=$("prog");if(!p)return;
-  var N=7,on=Math.round(Math.max(0,Math.min(100,pct))/100*N);
-  if(!p.getAttribute("data-n")){
-    p.setAttribute("data-n",String(N));
-    var tr=p.firstChild;tr.innerHTML="";
-    for(var i=0;i<N;i++){
-      var ti=document.createElement("i");ti.className="tri";tr.appendChild(ti);
-    }
-  }
-  var tr2=p.firstChild,tris=tr2?tr2.children:[];
-  for(var k=0;k<tris.length;k++){
-    var c="tri"+(k<on?" on":"")+(k===on-1&&hotEnd?" now":"");
-    if(tris[k].className!==c)tris[k].className=c;
+  var cv=$("prog-cv");
+  if(cv){
+    WAVE_PROG.set(cv, pct, hotEnd);
   }
   p.setAttribute("aria-valuenow",String(Math.round(pct)));
 }
@@ -888,6 +1019,11 @@ function render(){
   for(i=0;i<today.length;i++){
     if(nm>=today[i].s&&nm<today[i].e){cur=today[i];break}
     if(nm<today[i].s){next=today[i];break}
+  }
+  var isTest=location.hash==="#test"||location.search.indexOf("test")!==-1;
+  if(isTest&&!cur){
+    cur={s:nm-45,e:nm+45,st:"10:45",en:"12:15",l:{pair:2,name:"Математические методы решения",type:"лекция",room:"ауд. А-1",teacher:"Борисова Э.М."}};
+    today=[cur];
   }
   last.all=all;last.today=today;last.cur=cur;last.next=next;last.bar=null;last.day=now.getDate();
 
@@ -1540,7 +1676,13 @@ var HERO=(function(){
   var CI=new Uint8Array(0),CG=new Float32Array(0),PHA=new Float32Array(0);
   var VX=new Float32Array(0),VY=new Float32Array(0),VS=new Float32Array(0),ORD=new Uint16Array(0); var OX=new Float32Array(0),OY=new Float32Array(0),OVX=new Float32Array(0),OVY=new Float32Array(0),FX=new Float32Array(0),FY=new Float32Array(0),DL=new Float32Array(0),EA=new Float32Array(0); /* сборка при каждом открытии страницы; внутри открытой страницы (сворачивание, поворот, resize) заново не запускается */ var IN_MS=1500,t0=0,introOn=!reduce,ic=null,ictx=null;
   var t=0,tx=0,ty=0,mx=-1,my=-1;
-  var yaw=0,vyaw=0,pitch=0,dragging=false,lastX=0,lastY=0,dragId=-1,breath=1,SENS=.0045,pls=0,glw=0,mph=0,mphT=0,mphE=0,holdTm=0,hx=0,hy=0,tmMin=-1,TX=new Float32Array(0),TY=new Float32Array(0);/* удержание шара: частицы складываются во время, отпускание — возвращаются */function buildTime(){var d=new Date(),m=d.getMinutes();tmMin=m;var str=("0"+d.getHours()).slice(-2)+":"+("0"+m).slice(-2);var oc=document.createElement("canvas");oc.width=360;oc.height=120;var o=oc.getContext("2d");o.fillStyle="#fff";o.font="700 104px Inter,system-ui,sans-serif";o.textAlign="center";o.textBaseline="middle";o.fillText(str,180,64);var im=o.getImageData(0,0,360,120).data,pts=[];for(var y=0;y<120;y+=3)for(var x=0;x<360;x+=3)if(im[(y*360+x)*4+3]>128)pts.push(x,y);var n=pts.length/2;if(!n)return;var sc=Math.min(W*.86,rad*2.7)/360;for(var i=0;i<count;i++){var q=(Math.random()*n)|0;TX[i]=cx+(pts[q*2]-180)*sc;TY[i]=cy+(pts[q*2+1]-64)*sc}}window.__orbHero={pos:function(){var r=cv.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}},pulse:function(v){pls=Math.max(pls,v)},flash:function(){glw=1;pls=1},kick:function(f){for(var i=0;i<count;i++){var a=Math.random()*6.283,m=rad*f*(.4+Math.random());OVX[i]+=Math.cos(a)*m;OVY[i]+=Math.sin(a)*m}}};
+  var yaw=0,vyaw=0,pitch=0,dragging=false,lastX=0,lastY=0,dragId=-1,breath=1,SENS=.0045,pls=0,glw=0,mph=0,mphT=0,mphE=0,holdTm=0,hx=0,hy=0,tmMin=-1,TX=new Float32Array(0),TY=new Float32Array(0);/* удержание шара: частицы складываются во время, отпускание — возвращаются */function buildTime(){var d=new Date(),m=d.getMinutes();tmMin=m;var str=("0"+d.getHours()).slice(-2)+":"+("0"+m).slice(-2);var oc=document.createElement("canvas");oc.width=360;oc.height=120;var o=oc.getContext("2d");o.fillStyle="#fff";o.font="700 104px Inter,system-ui,sans-serif";o.textAlign="center";o.textBaseline="middle";o.fillText(str,180,64);var im=o.getImageData(0,0,360,120).data,pts=[];for(var y=0;y<120;y+=3)for(var x=0;x<360;x+=3)if(im[(y*360+x)*4+3]>128)pts.push(x,y);var n=pts.length/2;if(!n)return;var sc=Math.min(W*.86,rad*2.7)/360;for(var i=0;i<count;i++){var q=(Math.random()*n)|0;TX[i]=cx+(pts[q*2]-180)*sc;TY[i]=cy+(pts[q*2+1]-64)*sc}}
+window.__orbHero={
+  pos:function(){var r=cv.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}},
+  pulse:function(v){pls=Math.max(pls,v)},
+  flash:function(){glw=1;pls=1},
+  kick:function(f){for(var i=0;i<count;i++){var a=Math.random()*6.283,m=rad*f*(.4+Math.random());OVX[i]+=Math.cos(a)*m;OVY[i]+=Math.sin(a)*m}}
+};
   var TAO=Math.PI*2;var fcnt=0,cAcc="#8052ff",cHot="#ffb829",vis=true,BK=new Int8Array(0);
   /* 0..3 белые/серые · 4 янтарь · 5 изумруд · 6 акцент · 7 цвет текущей пары */
   var C=["#ffffff","#ffffff","#ffffff","#bdbdbd","#bdbdbd","#ffb829","#15846e","#8052ff","#9a9a9a"];
@@ -1661,7 +1803,8 @@ var HERO=(function(){
       var x1=x*ca-z*sa, z1=x*sa+z*ca;
       var y1=y*cb-z1*sb, z2=y*sb+z1*cb;
       var persp=1/(2.5-z2*.9);
-      var e=introOn?Math.max(0,Math.min(1,(nowT-t0-DL[i])/IN_MS)):1,kk=1-Math.pow(1-e,3);EA[i]=e;var bx=cx+x1*rad*breath*persp*1.75+FX[i]*(1-kk),by=cy+y1*rad*breath*persp*1.5+ty*H*.14+FY[i]*(1-kk);/* палец (и курсор) отталкивает частицы, пружина возвращает */if(!reduce&&mx>=0&&e>.6&&mphT===0){var ddx=bx+OX[i]-mx,ddy=by+OY[i]-my,dd=Math.sqrt(ddx*ddx+ddy*ddy)||1;if(dd<rr){var ff=1-dd/rr;ff=ff*ff*(dragging?1.6:1)*st;OVX[i]+=ddx/dd*ff;OVY[i]+=ddy/dd*ff}}OVX[i]+=-OX[i]*.045;OVY[i]+=-OY[i]*.045;OVX[i]*=.88;OVY[i]*=.88;OX[i]+=OVX[i];OY[i]+=OVY[i];VX[i]=bx+OX[i];if(mphE>.001)VX[i]+=(TX[i]-VX[i])*mphE;
+      var e=introOn?Math.max(0,Math.min(1,(nowT-t0-DL[i])/IN_MS)):1,kk=1-Math.pow(1-e,3);EA[i]=e;var bx=cx+x1*rad*breath*persp*1.75+FX[i]*(1-kk),by=cy+y1*rad*breath*persp*1.5+ty*H*.14+FY[i]*(1-kk);
+      /* палец (и курсор) отталкивает частицы, пружина возвращает */if(!reduce&&mx>=0&&e>.6&&mphT===0){var ddx=bx+OX[i]-mx,ddy=by+OY[i]-my,dd=Math.sqrt(ddx*ddx+ddy*ddy)||1;if(dd<rr){var ff=1-dd/rr;ff=ff*ff*(dragging?1.6:1)*st;OVX[i]+=ddx/dd*ff;OVY[i]+=ddy/dd*ff}}OVX[i]+=-OX[i]*.045;OVY[i]+=-OY[i]*.045;OVX[i]*=.88;OVY[i]*=.88;OX[i]+=OVX[i];OY[i]+=OVY[i];VX[i]=bx+OX[i];if(mphE>.001)VX[i]+=(TX[i]-VX[i])*mphE;
       VY[i]=by+OY[i];if(mphE>.001)VY[i]+=(TY[i]-VY[i])*mphE;
       VS[i]=3.3*dpr*(1-.4*mphE);
       Z[i]=z;
